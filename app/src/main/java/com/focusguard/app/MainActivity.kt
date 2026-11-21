@@ -3,6 +3,9 @@ package com.focusguard.app
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.window.Dialog
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -296,16 +299,27 @@ fun PermissionsScreen() {
     val context = LocalContext.current
     var refresh by remember { mutableIntStateOf(0) }
     val unused = refresh
+    var pendingAsk by remember { mutableStateOf<Triple<String, String, () -> Unit>?>(null) }
+    var showControls by remember { mutableStateOf(false) }
+    val session by SessionState.flow.collectAsState()
+    val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { refresh++ }
     LazyColumn(Modifier.fillMaxSize().padding(20.dp)) {
         item {
             Text("Setup & permissions", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold)
             Text("Blocking needs these. Each one is asked with a reason, and blocking data never leaves your device.", color = Muted, fontSize = 13.sp)
             Spacer(Modifier.height(16.dp))
             PermissionRow("Usage Access", "Detect the app in front of you + screen-time stats", Permissions.hasUsageAccess(context)) {
-                context.startActivity(Permissions.usageAccessIntent())
+                pendingAsk = Triple("Allow Usage Access?", "FocusGuard uses it to detect which app is in front of you and to show screen-time stats. Next, Android opens a settings page - switch FocusGuard on there, then come back. Blocking data never leaves your device.") {
+                    try { context.startActivity(Permissions.usageAccessIntent()) } catch (e: Exception) { }
+                }
             }
             PermissionRow("Accessibility", "Instantly block apps you picked when you open them mid-session", Permissions.isAccessibilityEnabled(context)) {
-                try { context.startActivity(Permissions.accessibilityIntent()) } catch (e: Exception) { }
+                pendingAsk = Triple("Allow Accessibility?", "This is what lets FocusGuard block a distracting app the moment you open it during a session. Next, Android opens Accessibility settings - choose Installed apps, then FocusGuard, then switch it on. If the switch is locked, follow the restricted-settings steps below first.") {
+                    try { context.startActivity(Permissions.accessibilityIntent()) } catch (e: Exception) { }
+                }
+            }
+            OutlinedButton(onClick = { showControls = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Session controls - start / pause / end", color = Color.White)
             }
             if (!Permissions.isAccessibilityEnabled(context)) {
                 Text("If the FocusGuard toggle in Accessibility settings is greyed out or says 'Restricted setting' (Android does this for apps installed outside the Play Store): 1) tap 'Open FocusGuard app info' below, 2) tap the ⋮ menu at the top right, 3) tap 'Allow restricted settings' and confirm with your PIN, 4) come back and allow Accessibility.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
@@ -313,13 +327,21 @@ fun PermissionsScreen() {
                     try { context.startActivity(Permissions.appDetailsIntent(context)) } catch (e: Exception) { }
                 }) { Text("Open FocusGuard app info", color = Color.White) }
             }
-            PermissionRow("Display over other apps", "Show the block screen over a blocked app", Permissions.canOverlay(context)) {
-                context.startActivity(Permissions.overlayIntent(context))
+            PermissionRow("Display over other apps", "Show the block screen + floating session button over other apps", Permissions.canOverlay(context)) {
+                pendingAsk = Triple("Allow display over other apps?", "FocusGuard draws the block screen and the small floating session button over distracting apps. Next, Android opens a page for FocusGuard - turn the switch on, then come back.") {
+                    try { context.startActivity(Permissions.overlayIntent(context)) } catch (e: Exception) { }
+                }
             }
-            Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = {
-                try { context.startActivity(Permissions.batteryIntent(context)) } catch (e: Exception) { }
-            }) { Text("Allow background running (battery)", color = Color.White) }
+            PermissionRow("Notifications", "Session timer in your notification bar", Permissions.hasNotifications(context)) {
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    notifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+            PermissionRow("Background running (battery)", "So Android does not kill your session timer mid-focus", Permissions.isIgnoringBattery(context)) {
+                pendingAsk = Triple("Allow background running?", "Android will now ask with its own Allow / Deny popup. Allowing keeps your focus session alive while the screen is off.") {
+                    try { context.startActivity(Permissions.batteryIntent(context)) } catch (e: Exception) { }
+                }
+            }
             Spacer(Modifier.height(18.dp))
             Text("Your goal", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             var exam by remember { mutableStateOf(SessionStore.exam) }
@@ -342,6 +364,48 @@ fun PermissionsScreen() {
                 Text(if (SessionStore.onboarded) "Setup saved ✓" else "Save setup")
             }
             Text("Tip: after changing a permission, come back here — the ticks update when you revisit this tab.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+            if (pendingAsk != null) {
+                val ask = pendingAsk!!
+                AlertDialog(
+                    onDismissRequest = { pendingAsk = null },
+                    title = { Text(ask.first) },
+                    text = { Text(ask.second) },
+                    confirmButton = { Button(onClick = { val a = ask.third; pendingAsk = null; a() }) { Text("Allow") } },
+                    dismissButton = { TextButton(onClick = { pendingAsk = null }) { Text("Not now") } }
+                )
+            }
+            if (showControls) {
+                Dialog(onDismissRequest = { showControls = false }) {
+                    Card(colors = CardDefaults.cardColors(containerColor = Card)) {
+                        Column(Modifier.padding(20.dp)) {
+                            Text("Session controls", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(8.dp))
+                            if (!session.active) {
+                                Text("Start a focus session:", color = Muted, fontSize = 13.sp)
+                                listOf(15, 25, 45, 60).forEach { mins ->
+                                    Button(onClick = {
+                                        FocusSessionService.start(context, "Timer", SessionStore.exam.ifBlank { "Study" }, mins)
+                                        showControls = false
+                                    }, modifier = Modifier.fillMaxWidth()) { Text("▶ Start $mins min") }
+                                }
+                            } else {
+                                Text(
+                                    if (session.mode == "Stopwatch") "Running: " + FocusSessionService.format(session.elapsedSeconds)
+                                    else "Time left: " + FocusSessionService.format(session.remainingSeconds),
+                                    color = Accent, fontSize = 18.sp, fontWeight = FontWeight.Bold
+                                )
+                                if (session.paused) {
+                                    Button(onClick = { FocusSessionService.send(context, FocusSessionService.ACTION_RESUME); showControls = false }, modifier = Modifier.fillMaxWidth()) { Text("▶ Resume") }
+                                } else {
+                                    Button(onClick = { FocusSessionService.send(context, FocusSessionService.ACTION_PAUSE); showControls = false }, modifier = Modifier.fillMaxWidth()) { Text("⏸ Pause") }
+                                }
+                                OutlinedButton(onClick = { FocusSessionService.send(context, FocusSessionService.ACTION_STOP); showControls = false }, modifier = Modifier.fillMaxWidth()) { Text("⏹ End session", color = Color.White) }
+                            }
+                            TextButton(onClick = { showControls = false }) { Text("Close") }
+                        }
+                    }
+                }
+            }
             Spacer(Modifier.height(18.dp))
             Text("Diagnostics", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             var diag by remember { mutableStateOf("") }

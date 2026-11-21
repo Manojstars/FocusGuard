@@ -34,6 +34,7 @@ class FocusSessionService : Service() {
                 SessionState.flow.value = s.copy(elapsedSeconds = elapsed)
                 updateNotification(elapsed)
                 Blocker.checkForeground(this@FocusSessionService)
+                FloatingButton.refresh()
                 handler.postDelayed(this, 1000)
                 return
             }
@@ -56,6 +57,7 @@ class FocusSessionService : Service() {
             }
             // Fallback foreground-app check (works even if Accessibility is off)
             Blocker.checkForeground(this@FocusSessionService)
+            FloatingButton.refresh()
             handler.postDelayed(this, 1000)
         }
     }
@@ -84,6 +86,7 @@ class FocusSessionService : Service() {
                     SessionStore.activeTotalSeconds = totalSec
                 }
                 startForeground(NOTIF_ID, buildNotification(if (mode == "Stopwatch") 0 else totalSec))
+                FloatingButton.show(this)
                 handler.removeCallbacks(tick); handler.post(tick)
             }
             ACTION_PAUSE -> {
@@ -130,6 +133,7 @@ class FocusSessionService : Service() {
                         blocked = SessionStore.blockedPackages
                     )
                     startForeground(NOTIF_ID, buildNotification(remaining))
+                    FloatingButton.show(this)
                     handler.removeCallbacks(tick); handler.post(tick)
                 } else {
                     SessionStore.clearActive(); stopSelf()
@@ -148,6 +152,7 @@ class FocusSessionService : Service() {
 
     private fun endSession() {
         OverlayBlocker.hide(this)
+        FloatingButton.hideAll(this)
         handler.removeCallbacks(tick)
         SessionState.flow.value = RunningSession()
         SessionStore.clearActive()

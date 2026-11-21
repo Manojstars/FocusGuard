@@ -26,6 +26,18 @@ object Permissions {
 
     fun canOverlay(context: Context): Boolean = Settings.canDrawOverlays(context)
 
+    fun isIgnoringBattery(context: Context): Boolean {
+        val pm = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+        return pm.isIgnoringBatteryOptimizations(context.packageName)
+    }
+
+    fun hasNotifications(context: Context): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < 33) return true
+        return androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.POST_NOTIFICATIONS
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+    }
+
     fun isAccessibilityEnabled(context: Context): Boolean {
         val enabled = Settings.Secure.getString(
             context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES

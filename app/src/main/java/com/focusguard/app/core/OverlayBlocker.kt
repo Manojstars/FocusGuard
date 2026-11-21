@@ -84,6 +84,7 @@ object OverlayBlocker {
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         )
+        params.windowAnimations = 0
         try {
             wm.addView(root, params)
             view = root; currentPkg = pkg
