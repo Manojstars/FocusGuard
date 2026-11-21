@@ -38,6 +38,9 @@ object Permissions {
         Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + context.packageName)
     )
     fun accessibilityIntent() = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+    fun appDetailsIntent(context: Context) = Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + context.packageName)
+    )
     fun batteryIntent(context: Context) = Intent(
         Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + context.packageName)
     )

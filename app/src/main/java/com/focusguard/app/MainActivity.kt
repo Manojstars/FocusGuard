@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.focusguard.app.core.FocusSessionService
+import com.focusguard.app.core.OverlayBlocker
 import com.focusguard.app.core.Permissions
 import com.focusguard.app.core.SessionState
 import com.focusguard.app.core.UsageStatsHelper
@@ -304,7 +305,13 @@ fun PermissionsScreen() {
                 context.startActivity(Permissions.usageAccessIntent())
             }
             PermissionRow("Accessibility", "Instantly block apps you picked when you open them mid-session", Permissions.isAccessibilityEnabled(context)) {
-                context.startActivity(Permissions.accessibilityIntent())
+                try { context.startActivity(Permissions.accessibilityIntent()) } catch (e: Exception) { }
+            }
+            if (!Permissions.isAccessibilityEnabled(context)) {
+                Text("If the FocusGuard toggle in Accessibility settings is greyed out or says 'Restricted setting' (Android does this for apps installed outside the Play Store): 1) tap 'Open FocusGuard app info' below, 2) tap the ⋮ menu at the top right, 3) tap 'Allow restricted settings' and confirm with your PIN, 4) come back and allow Accessibility.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
+                OutlinedButton(onClick = {
+                    try { context.startActivity(Permissions.appDetailsIntent(context)) } catch (e: Exception) { }
+                }) { Text("Open FocusGuard app info", color = Color.White) }
             }
             PermissionRow("Display over other apps", "Show the block screen over a blocked app", Permissions.canOverlay(context)) {
                 context.startActivity(Permissions.overlayIntent(context))
@@ -335,6 +342,25 @@ fun PermissionsScreen() {
                 Text(if (SessionStore.onboarded) "Setup saved ✓" else "Save setup")
             }
             Text("Tip: after changing a permission, come back here — the ticks update when you revisit this tab.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 10.dp))
+            Spacer(Modifier.height(18.dp))
+            Text("Diagnostics", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            var diag by remember { mutableStateOf("") }
+            Button(onClick = {
+                val s = SessionState.flow.value
+                diag = "Accessibility: " + (if (Permissions.isAccessibilityEnabled(context)) "ON" else "OFF") +
+                    "\nOverlay (display over apps): " + (if (Permissions.canOverlay(context)) "GRANTED" else "NOT granted") +
+                    "\nUsage Access: " + (if (Permissions.hasUsageAccess(context)) "GRANTED" else "NOT granted") +
+                    "\nSession running: " + (if (s.active) "YES (" + s.mode + ")" else "NO") +
+                    "\nApps in block list: " + SessionStore.blockedPackages.size +
+                    "\nLast app detected in front: " + (UsageStatsHelper.lastForegroundPackage(context) ?: "none detected")
+            }, modifier = Modifier.fillMaxWidth()) { Text("Run diagnostics") }
+            if (diag.isNotEmpty()) Text(diag, color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+            OutlinedButton(onClick = {
+                val appCtx = context.applicationContext
+                OverlayBlocker.show(appCtx, "com.instagram.android")
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ OverlayBlocker.hide(appCtx) }, 5000)
+            }, modifier = Modifier.fillMaxWidth()) { Text("Test block screen (5 seconds)", color = Color.White) }
+            Text("Test: tapping this should cover the screen with the green block screen for 5 seconds. If nothing appears, the overlay permission is not active.", color = Muted, fontSize = 12.sp)
         }
     }
 }
