@@ -1,49 +1,51 @@
 package com.focusguard.app.core
 
+import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import com.focusguard.app.BlockActivity
-import java.util.SortedMap
-import java.util.TreeMap
 
 object Blocker {
-    private var lastBlockAt: Long = 0
-    private var lastBlockedPkg: String = ""
 
-    fun maybeBlock(context: Context, pkg: String?) {
+    /** Single entry point: given the current foreground package, show or hide the block. */
+    fun handleForeground(context: Context, pkg: String?) {
         if (pkg.isNullOrBlank()) return
         val s = SessionState.flow.value
-        if (!s.active || s.paused) return
-        if (pkg == context.packageName) return
-        if (!s.blocked.contains(pkg)) return
-        val now = System.currentTimeMillis()
-        if (pkg == lastBlockedPkg && now - lastBlockAt < 1500) return
-        lastBlockAt = now; lastBlockedPkg = pkg
-        val i = Intent(context, BlockActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-            putExtra(BlockActivity.EXTRA_PKG, pkg)
+        if (!s.active || s.paused) { OverlayBlocker.hide(context); return }
+        if (pkg == context.packageName) { OverlayBlocker.hide(context); return }
+        if (s.blocked.contains(pkg)) {
+            OverlayBlocker.show(context, pkg)
+            if (!OverlayBlocker.isShowing()) {
+                // Overlay permission not granted - fall back to the block activity
+                val i = Intent(context, BlockActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                    putExtra(BlockActivity.EXTRA_PKG, pkg)
+                }
+                try { context.startActivity(i) } catch (e: Exception) { }
+            }
+        } else {
+            OverlayBlocker.hide(context)
         }
-        context.startActivity(i)
     }
 
     fun checkForeground(context: Context) {
         try {
             val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
             val end = System.currentTimeMillis()
-            val begin = end - 10_000
-            val events = usm.queryEvents(begin, end)
+            val events = usm.queryEvents(end - 10_000, end)
             var lastPkg: String? = null
-            val event = android.app.usage.UsageEvents.Event()
+            val event = UsageEvents.Event()
             while (events.hasNextEvent()) {
                 events.getNextEvent(event)
-                if (event.eventType == android.app.usage.UsageEvents.Event.MOVE_TO_FOREGROUND) {
+                if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
                     lastPkg = event.packageName
                 }
             }
-            maybeBlock(context, lastPkg)
+            if (lastPkg != null) handleForeground(context, lastPkg)
+            if (OverlayBlocker.isShowing()) OverlayBlocker.refreshTime()
         } catch (e: Exception) {
-            // Usage access not granted yet - Accessibility path still covers blocking
+            // Usage access not granted - Accessibility path still covers blocking
         }
     }
 }

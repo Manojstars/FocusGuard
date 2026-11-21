@@ -147,6 +147,7 @@ class FocusSessionService : Service() {
     }
 
     private fun endSession() {
+        OverlayBlocker.hide(this)
         handler.removeCallbacks(tick)
         SessionState.flow.value = RunningSession()
         SessionStore.clearActive()

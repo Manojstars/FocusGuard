@@ -7,7 +7,7 @@ class BlockerAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        Blocker.maybeBlock(this, event.packageName?.toString())
+        Blocker.handleForeground(this, event.packageName?.toString())
     }
     override fun onInterrupt() {}
 }
